@@ -1,0 +1,278 @@
+---
+title: Identification of Causes affecting the Severity of Car Accidents in Boston,
+  USA
+author: "Thanyada Kongpreu"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+  word_document:
+    toc: yes
+  pdf_document:
+    df_print: kable
+    toc: yes
+subtitle: Term paper Survmeth727
+references:
+- author:
+  - family: Caves
+    given: Roger W.
+  id: Caves2004
+  issued:
+    year: 2017
+  publisher: Routledge
+  title: Encyclopedia of the City
+  type: book
+- author:
+  - family: Goodwin
+    given: Phillip B.
+  id: Goodwin2001
+  issued:
+    year: 2001
+  publisher: Emerald Group Publishing Limited
+  title: Traffic Reduction
+  type: book
+- author:
+  - family: Ratanavaraha
+    given: Vatanavongs
+  - family: Suangka
+    given: Sonnarong
+  container-title: International Association of Traffic and Safety Science
+  id: Ratana2014
+  issue: 2
+  issued:
+    year: 2014
+  page: 130-136
+  title: Impacts of accident severity factors and loss values of crashes on expressways
+    in Thailand
+  type: article-journal
+  volume: 37
+- author:
+  - family: Donnell
+    given: Chris O.
+  container-title: International Association of Traffic and Safety Science
+  id: Donnell1996
+  issue: 6
+  issued:
+    year: 2014
+  page: 729-753
+  title: Predicting the severity of motor vehicle accident injuries using models of
+    ordered multiple choice
+  type: article-journal
+  volume: 28
+- author:
+  - family: Greene
+    given: William H.
+  id: Greene2012
+  issued:
+    year: 2012
+  publisher: Prentice hall
+  title: Econometric Analysis
+  type: book
+---
+
+```{r, include = FALSE}
+library(knitr)
+library(tidyverse)
+library(magrittr)
+library(readr)
+library(scales)
+library(nnet)
+library(stargazer)
+```
+
+## Introduction
+
+Traffic congession, especially on urban road networks, has been increasingly problematic since 1950s [@Caves2004]. The traffic congestion is a condition on transport that is defined as slower speeds of vehicles, and increased vehicular queueing. This issue has adversely affected people in many ways, e.g., wasting time of passengers, inability to forecast travel time accurately, wasted fuel increase air pollution, stressed motorists, etc. However, it is not all cities facing with the traffic congestion, some cities might have good traffic management stategies so that they can prevent and reduce the related traffic issue, while others are opposite. In the United States, Boston was named the most congested city in terms of hours lost by drivers, with the data analyzed by research firm INRIX.
+
+While the number of vehicles on road has been increasing over time, roadways are almost the same which means that the traffic demand exceeds roadway capacity. This is the major source of traffic congestion. Moreover, there are also other sources [@Goodwin2001] such as traffic accidents, construction activities, parades, etc. In this research, we will focus on traffic accidents that is a cause of traffic congesstion and investigate what factors that contribute to the road accidents along with its level of severity in Boston, USA.
+
+According to the reviews, we found several studies relating to the accidents severity factors and prediction of severity levels of crash. One study (@Ratana2014) found that a speed factor is only one factor significantly associated with accident severity on expressways in Thailand. Another study (@Donnell1996), in Australia, found that slight increase in the proabilities of fatal were influenced by various factors including the victim's age and speed of vehicles. Other causes including blood alcohol level, vehicle type, and type of collision have some impact on different types of injuries.
+
+Based on the reviews, there is limitation of the studies. Researchs in Thailand and Australia on factors influencing accidents still lack of some potential causes such as wheather condition and roadway surface. Because in those countries, the weather is mostly clear and the the roadway surface is mostly dry. So, this study applied multinomial logistic regression to access the factors that affect crashes on roads and forecast the proability of the crash severity with potential factors, e.g. surrounding environments, in Boston. The outcome of this study would be beneficial for the organizations that are responsible in traffic management strategies.
+
+## Data
+ 
+This study obtained the secondary data of accident records from the Massachusetts Department of Transportation website (MassDot), which is organized by the public orgaization which oversees road, public transit, aeronautics and transportation licensing in the US state of Massachusetts.
+
+The data was collected for almost the past 3 years from January, 2017 to November 2019, and contained 11,101 crash accidents recorded in Boston, before cleaning. The data includes accident severity, location (e.g.,  crash roadway, latitude, longitude), the number of vehicles, environment (e.g., light condition, road surface condition, wheather condition, and junction type), crash date, and crash time.  
+
+```{r, include = FALSE}
+caracc <- read.csv(file = "~/Desktop/Project727/data/CarAccidents_Boston.csv")
+```
+
+
+The data was removed for the cases cotaining missing and/or unknown values. In addition, the crash hour was recoded by grouping the crash hour into 8 groups, each group is 3-hour slot. (e.g., Midnight - 2:59AM, 3:00AM - 5:59AM, and so on). This is done for the purpose of analysis.
+
+```{r, include = FALSE}
+#remove missing
+caracc %<>% subset(complete.cases(caracc[,1:10])) 
+
+#remove unknown cases
+
+caracc %<>% subset(!(CrashSeverity %in% c("Unknown","Not Reported", "Unknown"))) %>%
+            subset(!(LightCondition %in% c("Unknown","Not reported","Other","Dark - unknown roadway lighting"))) %>%
+            subset(!(RoadSurfCondition %in% c("Unknown","Not reported","Other"))) %>%
+            subset(!(JunctionType %in% c("Unknown","Not reported"))) %>%
+            subset(!(WeatherCondition %in% c("Unknown","Not Reported", "Other"))) 
+
+#data clean
+caracc$WeatherCondition <- gsub("/.*", "", caracc$WeatherCondition)
+
+#recode CrashHour            
+caracc %<>% mutate(CrashHour = ifelse(CrashHour %in% c("12:00AM to 12:59AM", "01:00AM to 01:59AM", "02:00AM to 02:59AM"), "Midnight - 2:59AM",
+                       ifelse(CrashHour %in% c("03:00AM to 03:59AM", "04:00AM to 04:59AM", "05:00AM to 05:59AM"), "3:00AM - 5:59AM",
+                       ifelse(CrashHour %in% c("06:00AM to 06:59AM", "06:00AM to 06:59AM", "08:00AM to 08:59AM"), "6:00AM - 8:59AM",
+                       ifelse(CrashHour %in% c("09:00AM to 09:59AM", "10:00AM to 10:59AM", "11:00AM to 11:59AM"), "9:00AM - 11:59AM",
+                       ifelse(CrashHour %in% c("12:00PM to 12:59PM", "01:00PM to 01:59PM", "02:00PM to 02:59PM"), "Noon - 2:59PM",
+                       ifelse(CrashHour %in% c("03:00PM to 03:59PM", "04:00PM to 04:59PM", "05:00PM to 05:59PM"), "3:00PM - 5:59PM",
+                       ifelse(CrashHour %in% c("06:00PM to 06:59PM", "06:00PM to 06:59PM", "08:00PM to 08:59PM"), "6:00PM - 8:59PM", 
+                              "9:00PM - 11:59PM")))))))) 
+
+#convert data types
+caracc$CrashHour <- as.factor(caracc$CrashHour)
+caracc$LightCondition <- as.factor(caracc$LightCondition)
+caracc$RoadSurfCondition   <- as.factor(caracc$RoadSurfCondition)
+caracc$JunctionType <- as.factor(caracc$JunctionType)
+caracc$WeatherCondition <- as.factor(caracc$WeatherCondition)
+
+```
+
+After the data preparation, there were a total of 8,420 accidents recorded in 3 levels of crash severity including 5,679 property damage only accidents (67.4%), 2,717 injury accidents (32.3%), and 24 fatal injury accidents (0.3%).
+
+```{r, include = FALSE}
+caracc %>% group_by(CrashSeverity) %>%
+  summarise(total = n()) 
+```
+
+```{r}
+caracc %>% count(CrashSeverity) %>%
+  mutate(prop = n/nrow(caracc)) %>%
+  ggplot() +
+  geom_bar(mapping = aes(x = CrashSeverity, y = prop), stat = "identity", fill = "cornflowerblue") +
+  geom_text(aes(x = CrashSeverity, y = prop, label = scales::percent(prop)), vjust=1.6, color="black") +
+  scale_y_continuous(labels = scales::percent) +
+  coord_flip()
+```
+
+## Procedure
+
+### Variable Creation
+
+Dependent Variable:
+  Accident severity (Categorical with 3 levels: Property damage only, Non-fatal injury, and Fatal injury).
+
+Independent Variables:
+  (1) Crash Time (Categorical),
+	(2) Number of Vehicles (Discrete),
+	(3) Light Conditions (Categorical),
+	(4) Weather Conditions (Categorical),
+	(5) Road Surface Conditions (Categorical),
+	(6) Junction Type (Categorical).
+
+### Statistical Approach
+
+This study use the multinomial logistic regression model. It is important to understand that why this statistical technique is appropriate to analyze the data in this research. When the dependent variable is categorical with more than two levels and the independent variables are either dichotomous (i.e., binary) or continuous (i.e., interval or ratio in scale), for explaining the relationship between the dependent variable and independent variables, the results can be carried out via the multinomial logistic regression model to find significant factors influencing the dependent variables. It is also a model that is used to predict the probabilities of the different possible outcomes of a categorically distributed dependent variable, [@Greene2012].
+
+
+By default, the first category is the reference group. In this syudy, we will treat the "Fatal injury" as the reference group. 
+
+```{r}
+caracc$CrashSeverity2 = relevel(caracc$CrashSeverity, ref = "Fatal injury")
+```
+
+The multinomial logistic regression analysis can be performed by using the `multinorm()` function from the package "nnet".
+```{r, echo = T, results = 'hide', warning = F}
+model <- multinom(CrashSeverity2 ~ CrashHour + LightCondition + WeatherCondition + RoadSurfCondition + 
+                    JunctionType + NumVehc, data = caracc)
+```
+
+However, the `multinorm()` function does not provide p-values, we can get significance of the coefficients using the `stargazer()` function from the package "stargazer. The results will be saved in the working directory under the name `results.html`. (The table of output contains many rows, so it would be better for export the results into another file )
+
+```{r, echo = T, results = 'hide', warning = F}
+stargazer(model, type="html", out = 'results.html')
+```
+
+
+## Results
+
+### Data Exploration
+
+It is helpful to see how the levels of accident severity vary depending on each of the independent variables. Hence, we will have some clue about whether the independent variables selected to include in the model are likely to affect the dependent variable or not.
+
+The bar plots below indicate the number of crash accidents across the time periods for separately plots of the accident severity levels.  Broadly speaking, the fatal injury generally happen at late night between 9:00PM and 3:00AM, and at noon to 3:00PM. By contrast, for non-fatal injury and property damage only, the highest number of crashes accounted for the 3:00PM - 5:59PM period.
+
+```{r}
+caracc %>% group_by(CrashSeverity, CrashHour) %>%
+  ggplot() +
+  geom_bar(mapping = aes(x = CrashHour)) +
+  coord_flip() +
+  facet_wrap(~ CrashSeverity, scale = "free", nrow = 3)
+```
+
+The bar plots below indicate the number of crash accidents across the number of vehicles crashed for separately plots of the accident severity levels.  Broadly speaking, at least one people died on the car accidents when there were only one car in the collision. For non-fatal injury and property damage only, they have the same patterns with the hightest accicents in 2-car type, followed by only one vehicle and three vehicles respectively.
+
+```{r}
+caracc %>% group_by(CrashSeverity, NumVehc) %>%
+  ggplot() +
+  geom_bar(mapping = aes(x = NumVehc)) +
+  coord_flip() +
+  facet_wrap(~ CrashSeverity, scale = "free", nrow = 3)
+```
+
+The bar plots below indicate the number of crash accidents across the light conditions for separately plots of the accident severity levels. Overall, cash accidents happened mostly under the daylight condition for all the severity levels. However, the roadway not lighted seems to influence the fatal injury, because the number of accidents under roadway not lighted is aproximately 1/7 of the daylight counterparts, while it almost disappears in the other severity levels. 
+
+```{r}
+caracc %>% group_by(CrashSeverity, LightCondition) %>%
+  ggplot() +
+  geom_bar(mapping = aes(x = LightCondition)) +
+  coord_flip() +
+  facet_wrap(~ CrashSeverity, scale = "free", nrow = 3)
+```
+
+The bar plots below indicate the number of crash accidents across the weather conditions for separately plots of the accident severity levels. Overall, cash accidents happened mostly under the clear weather condition for all the severity levels, followed by clody weather and rain condition respectively. 
+
+```{r}
+caracc %>% group_by(CrashSeverity, WeatherCondition) %>%
+  ggplot() +
+  geom_bar(mapping = aes(x = WeatherCondition)) +
+  coord_flip() +
+  facet_wrap(~ CrashSeverity, scale = "free", nrow = 3)
+```
+
+The bar plots below indicate the number of crash accidents across the road surface conditions for separately plots of the accident severity levels. Overall, cash accidents happened mostly on dry surface of roadway for all the severity levels, followed by wet condition. 
+
+```{r}
+caracc %>% group_by(CrashSeverity, RoadSurfCondition) %>%
+  ggplot() +
+  geom_bar(mapping = aes(x = RoadSurfCondition)) +
+  coord_flip() +
+  facet_wrap(~ CrashSeverity, scale = "free", nrow = 3)
+```
+
+The bar plots below indicate the number of crash accidents across the junction types for separately plots of the accident severity levels. Overall, cash accidents happened mostly on straight roadway (not at junction) for all the severity levels, followed by four-way intersection. In addition, if the collision is on the straight roadway, there is a high chance that no one will get injured or dead, since the number of crashs on the straight roadway shows significantly higher than the other types of junction, compared to fatal injury and non-fatal injury.
+
+```{r}
+caracc %>% group_by(CrashSeverity, JunctionType) %>%
+  ggplot() +
+  geom_bar(mapping = aes(x = JunctionType)) +
+  coord_flip() +
+  facet_wrap(~ CrashSeverity, scale = "free", nrow = 3)
+```
+
+### Analysis of Multinomial logistics regression
+
+The analysis results demonstrate that the parameter values of some independent variables ware statisticaly significant, which the values show either positive or negative effects. Based on the findings, the relationship between accident severity in Boston and the factors included in the model, it found that crash hour, the number of vehicles crashed, light condition, wheather condition, and junction type have an effect on the accident severity under differnt conditions. 
+To interpret the parameters in the model (see `results.html`) that show significantly positive values, it means that if the crash accidents happen under a specific condition, there is a higher chance that the accident severity levels would be non-fatal injury and property damage only, i.e. there is a less risk of death in the car accidents (note: fatal injury is the reference group). The conditions with significantly positive parameters include CrashHour3:00PM - 5:59PM, CrashHour6:00AM - 8:59AM, CrashHour9:00AM - 11:59AM, LightConditionDawn, LightConditionDusk, WeatherConditionFog, WeatherConditionOther, WeatherConditionSevere crosswinds, WeatherConditionSleet, WeatherConditionSnow, RoadSurfConditionIce, WeatherConditionSnow, RoadSurfConditionIce, RoadSurfConditionSand, RoadSurfConditionSlush, RoadSurfConditionSnow, JunctionTypeOn-ramp, JunctionTypeRailway grade crossing, and NumVehc.
+
+By contrast, the parameters in the model that show significantly negative values include LightConditionDark - roadway not lighted, LightConditionDaylight, JunctionTypeFive-point or more, JunctionTypeFour-way intersection, JunctionTypeNot at junction, JunctionTypeOff-ramp, JunctionTypeT-intersection, and JunctionTypeY-intersection. If the crash accidents happen under any specific conditions with negative parameters, it can be interpreted as a greater risk of death in that accidents (note: fatal injury is the reference group).
+
+## Discussion
+
+The purpose of this research is to study the factors affecting accident severity on expressways by using accident data of almost the past three years. The multiple logistic regression approach was applied by the study for finding factors and their relationships on the severity of crashes, which were categorized into 3 groups: property damage only; injury accident; and fatal accident. Based on the analysis, there are several factors that significantly affect the severity levels in either positive or negative ways. 
+
+Among the significant factors, crash accidents on roadway not lighted should be mainly concerned for some reasons: (1) it is not a natural factor, (2) it has almost the highest probability for moving from property damage only to fatal injury (Odds Ratio = 0.135). It means that there are 13.5 crash accidents which is property damage only, for every 10 crash accident which is fatal injury, when under the same conditions of weather, road surface, crash time, number of crashed vehicles, and junction type.
+
+The outcome of this study helps the organizations that are responsible in traffic management strategies to issue accident prevention policies and improve any related infrastructure in order to protect unexpected losses from car accidents in Boston.
+
+## References
